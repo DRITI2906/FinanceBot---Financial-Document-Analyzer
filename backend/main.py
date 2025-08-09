@@ -5,11 +5,15 @@ import os
 import tempfile
 import shutil
 from pathlib import Path
+import io
+import csv
 from typing import Dict, Any
 import json
 from datetime import datetime
 import pdfplumber
 import PyPDF2
+from docx import Document
+import openpyxl
 import google.generativeai as genai
 from dotenv import load_dotenv
 import uuid
@@ -74,6 +78,47 @@ def extract_pdf_text(file_path: str) -> str:
         pass
     
     return text or "Could not extract text from PDF"
+
+def extract_docx_text(file_path: str) -> str:
+    try:
+        with open(file_path, 'rb') as f:
+            data = f.read()
+        doc = Document(io.BytesIO(data))
+        return "\n".join(p.text for p in doc.paragraphs)
+    except Exception:
+        return ""
+
+def extract_csv_text(file_path: str) -> str:
+    try:
+        lines = []
+        with open(file_path, newline='', encoding='utf-8', errors='ignore') as csvfile:
+            reader = csv.reader(csvfile)
+            for row in reader:
+                lines.append(", ".join(cell.strip() for cell in row))
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+def extract_xlsx_text(file_path: str) -> str:
+    wb = None
+    try:
+        with open(file_path, 'rb') as f:
+            data = f.read()
+        wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        lines = []
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(cell) if cell is not None else '' for cell in row]
+                lines.append(", ".join(cells))
+        return "\n".join(lines)
+    except Exception:
+        return ""
+    finally:
+        try:
+            if wb is not None:
+                wb.close()
+        except Exception:
+            pass
 
 def analyze_with_ai(text: str, filename: str) -> Dict[str, Any]:
     """Get AI analysis using Google Gemini"""
@@ -148,19 +193,33 @@ async def root():
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    """Upload and analyze document"""
-    
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files supported")
-    
-    # Save uploaded file temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+    """Upload and analyze document (pdf, docx, csv, xlsx)"""
+
+    filename_lower = file.filename.lower()
+    allowed_suffixes = ('.pdf', '.docx', '.csv', '.xlsx')
+    if not filename_lower.endswith(allowed_suffixes):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Allowed: .pdf, .docx, .csv, .xlsx",
+        )
+
+    suffix = Path(file.filename).suffix or '.dat'
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = tmp.name
     
     try:
-        # Extract text
-        text = extract_pdf_text(tmp_path)
+        # Extract text based on file type
+        if filename_lower.endswith('.pdf'):
+            text = extract_pdf_text(tmp_path)
+        elif filename_lower.endswith('.docx'):
+            text = extract_docx_text(tmp_path)
+        elif filename_lower.endswith('.csv'):
+            text = extract_csv_text(tmp_path)
+        elif filename_lower.endswith('.xlsx'):
+            text = extract_xlsx_text(tmp_path)
+        else:
+            text = ""
         
         if not text.strip():
             raise HTTPException(status_code=400, detail="No text found in PDF")
@@ -198,7 +257,15 @@ async def upload_file(file: UploadFile = File(...)):
         return result
         
     finally:
-        os.unlink(tmp_path)
+        try:
+            os.unlink(tmp_path)
+        except PermissionError:
+            try:
+                import time
+                time.sleep(0.1)
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
 @app.post("/chat")
 async def chat(request: Dict[str, Any]):

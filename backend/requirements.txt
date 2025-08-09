@@ -15,3 +15,7 @@ python-dotenv==1.0.0
 
 # Async support
 aiofiles==23.2.0
+
+# Additional formats support
+python-docx==0.8.11
+openpyxl==3.1.2

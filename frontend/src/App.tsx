@@ -31,7 +31,7 @@ function App() {
 
   const handleUpload = async () => {
     if (!file) {
-      setError('Please select a PDF file');
+      setError('Please select a file (.pdf, .docx, .csv, .xlsx)');
       return;
     }
 
@@ -92,7 +92,7 @@ function App() {
           <div className="upload-area">
             <input
               type="file"
-              accept=".pdf"
+              accept=".pdf,.docx,.csv,.xlsx"
               onChange={handleFileChange}
               className="file-input"
             />

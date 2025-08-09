@@ -16,9 +16,14 @@ const FileUpload: React.FC = () => {
     if (!file) return;
 
     // Validate file type
-    const allowedTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
+    const allowedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+      'text/csv',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+    ];
     if (!allowedTypes.includes(file.type)) {
-      toast.error('Please upload a PDF or image file (PNG, JPG, JPEG)');
+      toast.error('Please upload a PDF, DOCX, CSV, or XLSX file');
       return;
     }
 
@@ -50,8 +55,9 @@ const FileUpload: React.FC = () => {
     onDrop,
     accept: {
       'application/pdf': ['.pdf'],
-      'image/png': ['.png'],
-      'image/jpeg': ['.jpg', '.jpeg'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'text/csv': ['.csv'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
     },
     multiple: false,
     disabled: uploading,
