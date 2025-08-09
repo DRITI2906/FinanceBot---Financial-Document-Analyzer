@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "Starting Finance GenAI Chatbot..."
+echo "Starting FinanceBot..."
 echo
 
 # Function to cleanup on exit
@@ -47,7 +47,7 @@ FRONTEND_PID=$!
 
 echo
 echo "======================================"
-echo "Finance GenAI Chatbot Started!"
+echo "FinanceBot Started!"
 echo "======================================"
 echo "Frontend: http://localhost:3000"
 echo "Backend API: http://localhost:8000"

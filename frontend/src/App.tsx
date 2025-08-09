@@ -82,7 +82,7 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>🤖 Finance GenAI Chatbot</h1>
+        <h1>🤖 FinanceBot</h1>
         <p>Powered by Google Gemini - Upload PDF documents for AI analysis</p>
       </header>
 

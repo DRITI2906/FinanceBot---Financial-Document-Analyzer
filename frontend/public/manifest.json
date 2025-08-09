@@ -1,6 +1,6 @@
 {
-  "short_name": "Finance AI Chatbot",
-  "name": "Finance GenAI Chatbot",
+  "short_name": "FinanceBot",
+  "name": "FinanceBot",
   "icons": [
     {
       "src": "favicon.ico",

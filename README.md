@@ -1,4 +1,4 @@
-# Finance GenAI Chatbot
+# FinanceBot
 
 A comprehensive AI-powered financial document analysis system that uses LangGraph workflows to analyze financial documents, detect anomalies, and provide intelligent insights through a modern React interface.
 
@@ -171,7 +171,7 @@ npm start
 **Windows - Create `start.bat`:**
 ```batch
 @echo off
-echo Starting Finance GenAI Chatbot...
+echo Starting FinanceBot...
 
 echo Starting Backend...
 start "Backend" cmd /k "cd backend && venv\Scripts\activate && uvicorn main:app --reload --host 0.0.0.0 --port 8000"
@@ -189,7 +189,7 @@ echo Frontend: http://localhost:3000
 **macOS/Linux - Create `start.sh`:**
 ```bash
 #!/bin/bash
-echo "Starting Finance GenAI Chatbot..."
+echo "Starting FinanceBot..."
 
 echo "Starting Backend..."
 cd backend
@@ -433,7 +433,7 @@ For issues and questions:
 
 ## 🎉 What's Next?
 
-This Finance GenAI Chatbot provides a solid foundation for financial document analysis. You can extend it with:
+FinanceBot provides a solid foundation for financial document analysis. You can extend it with:
 
 - **Additional AI Models**: Integrate more LLMs for specialized tasks
 - **Advanced Analytics**: Add time-series analysis and forecasting

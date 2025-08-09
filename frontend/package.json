@@ -1,7 +1,7 @@
 {
   "name": "finance-genai-chatbot-frontend",
   "version": "1.0.0",
-  "description": "React frontend for Finance GenAI Chatbot",
+  "description": "React frontend for FinanceBot",
   "private": true,
   "dependencies": {
     "@heroicons/react": "^2.2.0",
