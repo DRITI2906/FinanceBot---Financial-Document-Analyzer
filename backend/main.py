@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 import io
 import csv
-from typing import Dict, Any
+from typing import Dict, Any, List
 import json
 from datetime import datetime
 import pdfplumber
@@ -182,6 +182,17 @@ def analyze_with_ai(text: str, filename: str) -> Dict[str, Any]:
             "document_type": "unknown"
         }
 
+def extract_text_by_extension(file_path: str, filename_lower: str) -> str:
+    if filename_lower.endswith('.pdf'):
+        return extract_pdf_text(file_path)
+    if filename_lower.endswith('.docx'):
+        return extract_docx_text(file_path)
+    if filename_lower.endswith('.csv'):
+        return extract_csv_text(file_path)
+    if filename_lower.endswith('.xlsx'):
+        return extract_xlsx_text(file_path)
+    return ""
+
 @app.get("/")
 async def root():
     return {
@@ -209,17 +220,7 @@ async def upload_file(file: UploadFile = File(...)):
         tmp_path = tmp.name
     
     try:
-        # Extract text based on file type
-        if filename_lower.endswith('.pdf'):
-            text = extract_pdf_text(tmp_path)
-        elif filename_lower.endswith('.docx'):
-            text = extract_docx_text(tmp_path)
-        elif filename_lower.endswith('.csv'):
-            text = extract_csv_text(tmp_path)
-        elif filename_lower.endswith('.xlsx'):
-            text = extract_xlsx_text(tmp_path)
-        else:
-            text = ""
+        text = extract_text_by_extension(tmp_path, filename_lower)
         
         if not text.strip():
             raise HTTPException(status_code=400, detail="No text found in PDF")
@@ -267,6 +268,137 @@ async def upload_file(file: UploadFile = File(...)):
             except Exception:
                 pass
 
+@app.post("/upload-multiple")
+async def upload_multiple(files: List[UploadFile] = File(...)):
+    """Upload and analyze multiple documents (pdf, docx, csv, xlsx)"""
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+
+    results: List[Dict[str, Any]] = []
+    previews: List[Dict[str, str]] = []  # filename + text preview for combined analysis
+
+    for file in files:
+        filename_lower = file.filename.lower()
+        if not filename_lower.endswith(('.pdf', '.docx', '.csv', '.xlsx')):
+            # Skip unsupported
+            continue
+
+        suffix = Path(file.filename).suffix or '.dat'
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            tmp_path = tmp.name
+
+        try:
+            text = extract_text_by_extension(tmp_path, filename_lower)
+            if not text.strip():
+                continue
+
+            analysis = analyze_with_ai(text, file.filename)
+
+            doc_id = str(uuid.uuid4())
+            result = {
+                "document_id": doc_id,
+                "filename": file.filename,
+                "document_type": analysis["document_type"],
+                "processed_at": datetime.now().isoformat(),
+                "summary": {
+                    "total_transactions": 0,
+                    "total_amount": 0.0,
+                    "date_range": {},
+                    "key_insights": [analysis["ai_analysis"][:200] + "..."]
+                },
+                "transactions": [],
+                "anomalies": [],
+                "risk_score": analysis["risk_score"],
+                "recommendations": ["Review the AI analysis for insights"],
+                "extractable_data": {"text_preview": text[:300]}
+            }
+
+            documents[doc_id] = {
+                "result": result,
+                "full_text": text,
+                "ai_analysis": analysis["ai_analysis"]
+            }
+
+            results.append(result)
+            previews.append({
+                "filename": file.filename,
+                "preview": text[:1500]
+            })
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except PermissionError:
+                try:
+                    import time
+                    time.sleep(0.1)
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+
+    if not results:
+        raise HTTPException(status_code=400, detail="No valid documents processed")
+
+    # Build combined insights using LLM if configured
+    combined = {
+        "key_insights": [],
+        "risk_score": 0.0,
+        "recommendations": []
+    }
+
+    try:
+        if model:
+            combined_prompt = (
+                "You are a financial analyst. Analyze these multiple financial documents together and provide a consolidated summary.\n\n"
+            )
+            for p in previews:
+                combined_prompt += f"Document: {p['filename']}\nContent Preview: {p['preview']}\n\n"
+            combined_prompt += (
+                "Provide:\n"
+                "1) 4-7 consolidated Key Insights (bulleted).\n"
+                "2) An overall Risk Score from 0-10.\n"
+                "3) 3-5 actionable Recommendations (bulleted).\n"
+            )
+
+            combined_response = model.generate_content(combined_prompt)
+            text_out = combined_response.text or ""
+
+            # Extract risk score
+            import re as _re
+            risk_score = 0.0
+            m = _re.search(r"risk\s*score\D*(\d+(?:\.\d+)?)", text_out, _re.IGNORECASE)
+            if m:
+                try:
+                    risk_score = float(m.group(1))
+                    risk_score = max(0.0, min(10.0, risk_score))
+                except Exception:
+                    risk_score = 0.0
+
+            # Extract bullet lists
+            insights = []
+            recs = []
+            bullets = [line.strip(" -*•\t").strip() for line in text_out.splitlines() if line.strip().startswith(("-","*","•"))]
+            # Heuristic: first half bullets as insights, latter as recs if headings not present
+            if bullets:
+                split_at = max(2, len(bullets)//2)
+                insights = bullets[:split_at]
+                recs = bullets[split_at:]
+
+            combined["key_insights"] = insights or [r["summary"]["key_insights"][0] for r in results if r["summary"]["key_insights"]][:5]
+            combined["risk_score"] = risk_score or (sum(r["risk_score"] for r in results) / len(results))
+            combined["recommendations"] = recs or ["Review combined financial patterns across documents", "Pay extra attention to high-risk areas highlighted"]
+        else:
+            # Fallback without LLM
+            combined["key_insights"] = [r["summary"]["key_insights"][0] for r in results if r["summary"]["key_insights"]][:5]
+            combined["risk_score"] = sum(r["risk_score"] for r in results) / len(results)
+            combined["recommendations"] = ["Monitor for unusual patterns across all documents", "Validate large or frequent transactions"]
+    except Exception:
+        combined["key_insights"] = [r["summary"]["key_insights"][0] for r in results if r["summary"]["key_insights"]][:5]
+        combined["risk_score"] = sum(r["risk_score"] for r in results) / len(results)
+        combined["recommendations"] = ["Review combined results manually"]
+
+    return {"results": results, "combined": combined}
+
 @app.post("/chat")
 async def chat(request: Dict[str, Any]):
     """Chat about document"""
@@ -309,6 +441,51 @@ async def chat(request: Dict[str, Any]):
             "answer": f"Error: {str(e)}",
             "document_id": doc_id
         }
+
+@app.post("/chat-multi")
+async def chat_multi(request: Dict[str, Any]):
+    """Ask a question across multiple analyzed documents"""
+    document_ids: List[str] = request.get("document_ids", [])
+    question: str = request.get("question", "")
+
+    if not document_ids:
+        raise HTTPException(status_code=400, detail="document_ids is required")
+    if not question:
+        raise HTTPException(status_code=400, detail="question is required")
+
+    # Build combined context with truncation
+    contexts = []
+    total_budget = 3000  # chars budget
+    per_doc_budget = max(400, total_budget // max(1, len(document_ids)))
+
+    for doc_id in document_ids:
+        if doc_id not in documents:
+            continue
+        doc = documents[doc_id]
+        name = doc["result"]["filename"]
+        content = (doc["full_text"] or "")[:per_doc_budget]
+        contexts.append(f"Document: {name}\nContent: {content}\n")
+
+    if not contexts:
+        raise HTTPException(status_code=404, detail="No documents found")
+
+    try:
+        if not model:
+            return {
+                "answer": "Gemini API key not configured. Please add GEMINI_API_KEY to .env file",
+                "document_ids": document_ids
+            }
+
+        prompt = (
+            "You are a financial analyst. Answer the user's question using ALL documents below.\n\n" +
+            "\n\n".join(contexts) +
+            f"\nUser Question: {question}\n\nProvide a consolidated answer that references specific documents when relevant."
+        )
+
+        response = model.generate_content(prompt)
+        return {"answer": response.text, "document_ids": document_ids}
+    except Exception as e:
+        return {"answer": f"Error: {str(e)}", "document_ids": document_ids}
 
 @app.get("/documents")
 async def get_documents():
