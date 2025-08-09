@@ -1,0 +1,17 @@
+# FastAPI and web framework
+fastapi==0.100.0
+uvicorn==0.23.0
+python-multipart==0.0.6
+
+# Google Gemini for AI functionality
+google-generativeai==0.3.2
+
+# PDF processing (simple, no compilation needed)
+pdfplumber==0.10.3
+PyPDF2==3.0.1
+
+# Environment and configuration
+python-dotenv==1.0.0
+
+# Async support
+aiofiles==23.2.0
