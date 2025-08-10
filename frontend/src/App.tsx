@@ -22,6 +22,7 @@ function App() {
   const [chatQuestion, setChatQuestion] = useState('');
   const [chatAnswer, setChatAnswer] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const [expandedInsights, setExpandedInsights] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -188,16 +189,29 @@ function App() {
       return cleaned.join('\n');
     };
 
-    // 1) strip leading bullet markers from model output
     const stripped = normalize(text || '');
-    // 2) escape HTML
     const escaped = escapeHtml(stripped);
-    // 3) strong and em
     const withBold = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     const withEm = withBold.replace(/(^|[^*])\*(?!\*)([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
-    // 4) line breaks
     const withBreaks = withEm.replace(/\n/g, '<br/>');
     return { __html: withBreaks };
+  };
+
+  const toggleInsight = (insightId: string) => {
+    setExpandedInsights(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(insightId)) {
+        newSet.delete(insightId);
+      } else {
+        newSet.add(insightId);
+      }
+      return newSet;
+    });
+  };
+
+  const truncateText = (text: string, maxLength: number = 150) => {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
   };
 
   return (
@@ -278,9 +292,26 @@ function App() {
             <div className="insights">
               <h3>🔍 Key Insights</h3>
               <ul>
-                {(results.length > 0 ? results : (result ? [result] : [])).flatMap((r) => r.summary.key_insights.map((insight, i) => (
-                  <li key={`${r.document_id}-${i}`} dangerouslySetInnerHTML={renderMarkdownLite(insight)}></li>
-                )))}
+                {(results.length > 0 ? results : (result ? [result] : [])).flatMap((r) => r.summary.key_insights.map((insight, i) => {
+                  const insightId = `${r.document_id}-${i}`;
+                  const isExpanded = expandedInsights.has(insightId);
+                  const displayText = isExpanded ? insight : truncateText(insight);
+                  const shouldShowToggle = insight.length > 150;
+                  
+                  return (
+                    <li key={insightId}>
+                      <div dangerouslySetInnerHTML={renderMarkdownLite(displayText)}></div>
+                      {shouldShowToggle && (
+                        <button
+                          onClick={() => toggleInsight(insightId)}
+                          className="read-more-btn"
+                        >
+                          {isExpanded ? 'Read Less' : 'Read More'}
+                        </button>
+                      )}
+                    </li>
+                  );
+                }))}
               </ul>
             </div>
 

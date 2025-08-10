@@ -186,6 +186,22 @@
   border-left: 4px solid #2563eb;
 }
 
+.read-more-btn {
+  background: #374151;
+  color: #e5e7eb;
+  border: 1px solid #4b5563;
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-top: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.read-more-btn:hover {
+  background: #4b5563;
+}
+
 .chat-section {
   background: #0b1220;
   padding: 20px;
