@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAnalysis } from '../context/AnalysisContext';
 import RiskBadge from '../components/RiskBadge';
-import ChatInterface from '../components/ChatInterface';
+import AnalysisChat from '../components/AnalysisChat';
 import { 
   ArrowLeftIcon,
   DocumentTextIcon,
@@ -264,7 +264,7 @@ const Analysis: React.FC = () => {
         )}
 
         {activeTab === 'chat' && (
-          <ChatInterface documentId={currentAnalysis.document_id} />
+          <AnalysisChat documentId={currentAnalysis.document_id} />
         )}
       </div>
     </div>

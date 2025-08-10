@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
@@ -18,6 +18,16 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 import uuid
 import re
+from sqlalchemy.orm import Session
+
+# Database imports
+from database import create_tables, get_db
+from db_service import (
+    save_document, save_conversation, get_user_conversations, 
+    get_user_documents, get_document_by_id, delete_document,
+    create_conversation_thread, add_message_to_thread, get_user_threads,
+    get_thread_messages, delete_thread
+)
 
 # Load environment variables explicitly from backend/.env regardless of CWD
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
@@ -50,8 +60,18 @@ try:
 except Exception:
     model = None
 
-# Simple in-memory storage
+# Initialize database
+create_tables()
+
+# Simple in-memory storage (keeping for backward compatibility)
 documents = {}
+
+def get_session_id(request: Request) -> str:
+    """Get or create session ID from request"""
+    session_id = request.headers.get("X-Session-ID")
+    if not session_id:
+        session_id = str(uuid.uuid4())
+    return session_id
 
 def extract_pdf_text(file_path: str) -> str:
     """Extract text from PDF"""
@@ -210,7 +230,7 @@ async def upload_file(file: UploadFile = File(...)):
     allowed_suffixes = ('.pdf', '.docx', '.csv', '.xlsx')
     if not filename_lower.endswith(allowed_suffixes):
         raise HTTPException(
-            status_code=400,
+            status_code=400, 
             detail="Unsupported file type. Allowed: .pdf, .docx, .csv, .xlsx",
         )
 
@@ -256,7 +276,7 @@ async def upload_file(file: UploadFile = File(...)):
         }
         
         return result
-        
+    
     finally:
         try:
             os.unlink(tmp_path)
@@ -269,11 +289,16 @@ async def upload_file(file: UploadFile = File(...)):
                 pass
 
 @app.post("/upload-multiple")
-async def upload_multiple(files: List[UploadFile] = File(...)):
+async def upload_multiple(
+    files: List[UploadFile] = File(...),
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
     """Upload and analyze multiple documents (pdf, docx, csv, xlsx)"""
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 
+    session_id = get_session_id(request)
     results: List[Dict[str, Any]] = []
     previews: List[Dict[str, str]] = []  # filename + text preview for combined analysis
 
@@ -320,6 +345,20 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
                 "ai_analysis": analysis["ai_analysis"]
             }
 
+            # Save to database
+            try:
+                save_document(
+                    document_id=doc_id,
+                    filename=file.filename,
+                    document_type=analysis["document_type"],
+                    content=text,
+                    analysis_result=result,
+                    session_id=session_id,
+                    db=db
+                )
+            except Exception as e:
+                print(f"Database save error: {e}")
+            
             results.append(result)
             previews.append({
                 "filename": file.filename,
@@ -400,11 +439,16 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
     return {"results": results, "combined": combined}
 
 @app.post("/chat")
-async def chat(request: Dict[str, Any]):
+async def chat(
+    request: Dict[str, Any],
+    request_obj: Request = None,
+    db: Session = Depends(get_db)
+):
     """Chat about document"""
     
     doc_id = request.get("document_id")
     question = request.get("question")
+    session_id = get_session_id(request_obj)
     
     if not doc_id or doc_id not in documents:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -430,12 +474,25 @@ async def chat(request: Dict[str, Any]):
         """
         
         response = model.generate_content(prompt)
+        answer = response.text
+        
+        # Save conversation to database
+        try:
+            save_conversation(
+                question=question,
+                answer=answer,
+                document_id=doc_id,
+                session_id=session_id,
+                db=db
+            )
+        except Exception as e:
+            print(f"Database save error: {e}")
         
         return {
-            "answer": response.text,
+            "answer": answer,
             "document_id": doc_id
         }
-        
+    
     except Exception as e:
         return {
             "answer": f"Error: {str(e)}",
@@ -503,6 +560,191 @@ async def get_documents():
         })
     
     return {"documents": doc_list}
+
+@app.get("/conversations")
+async def get_conversations(
+    request: Request = None,
+    db: Session = Depends(get_db),
+    limit: int = 50
+):
+    """Get conversation history for the current session"""
+    session_id = get_session_id(request)
+    conversations = get_user_conversations(session_id, db, limit)
+    return {"conversations": conversations}
+
+@app.get("/user-documents")
+async def get_user_documents_endpoint(
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """Get all documents for the current session"""
+    session_id = get_session_id(request)
+    documents_list = get_user_documents(session_id, db)
+    return {"documents": documents_list}
+
+@app.delete("/documents/{document_id}")
+async def delete_document_endpoint(
+    document_id: str,
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """Delete a document and all its conversations"""
+    session_id = get_session_id(request)
+    success = delete_document(document_id, session_id, db)
+    if success:
+        # Also remove from in-memory storage
+        if document_id in documents:
+            del documents[document_id]
+        return {"message": "Document deleted successfully"}
+    else:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+# Conversation Thread Endpoints
+@app.post("/threads")
+async def create_thread(
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """Create a new conversation thread"""
+    session_id = get_session_id(request)
+    thread = create_conversation_thread(session_id, db=db)
+    return {
+        "thread_id": thread.thread_id,
+        "title": thread.title,
+        "created_at": thread.created_at.isoformat()
+    }
+
+@app.get("/threads")
+async def get_threads(
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """Get all conversation threads for the current user"""
+    session_id = get_session_id(request)
+    threads = get_user_threads(session_id, db=db)
+    return {"threads": threads}
+
+@app.get("/threads/{thread_id}/messages")
+async def get_messages(
+    thread_id: str,
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """Get all messages in a conversation thread"""
+    session_id = get_session_id(request)
+    messages = get_thread_messages(thread_id, session_id, db=db)
+    return {"messages": messages}
+
+@app.post("/threads/{thread_id}/messages")
+async def add_message(
+    thread_id: str,
+    request: Dict[str, Any],
+    request_obj: Request = None,
+    db: Session = Depends(get_db)
+):
+    """Add a message to a conversation thread"""
+    session_id = get_session_id(request_obj)
+    role = request.get("role", "user")
+    content = request.get("content", "")
+    document_id = request.get("document_id")
+    
+    if not content:
+        raise HTTPException(status_code=400, detail="Content is required")
+    
+    message = add_message_to_thread(
+        thread_id=thread_id,
+        role=role,
+        content=content,
+        session_id=session_id,
+        document_id=document_id,
+        db=db
+    )
+    
+    return {
+        "id": message.id,
+        "role": message.role,
+        "content": message.content,
+        "timestamp": message.timestamp.isoformat()
+    }
+
+@app.post("/threads/{thread_id}/chat")
+async def chat_in_thread(
+    thread_id: str,
+    request: Dict[str, Any],
+    request_obj: Request = None,
+    db: Session = Depends(get_db)
+):
+    """Chat in a specific thread with AI response"""
+    session_id = get_session_id(request_obj)
+    user_message = request.get("message", "")
+    document_ids = request.get("document_ids", [])
+    
+    if not user_message:
+        raise HTTPException(status_code=400, detail="Message is required")
+    
+    # Add user message to thread
+    add_message_to_thread(
+        thread_id=thread_id,
+        role="user",
+        content=user_message,
+        session_id=session_id,
+        db=db
+    )
+    
+    # Generate AI response
+    try:
+        if not model:
+            ai_response = "Gemini API key not configured. Please add GEMINI_API_KEY to .env file"
+        else:
+            # Build context from documents if provided
+            context = ""
+            if document_ids:
+                contexts = []
+                for doc_id in document_ids:
+                    if doc_id in documents:
+                        doc = documents[doc_id]
+                        contexts.append(f"Document: {doc['result']['filename']}\nContent: {doc['full_text'][:1000]}")
+                if contexts:
+                    context = "\n\n".join(contexts) + "\n\n"
+            
+            prompt = f"""
+            {context}User Question: {user_message}
+
+            Please provide a helpful, specific answer. If documents are provided, base your response on their content.
+            """
+            
+            response = model.generate_content(prompt)
+            ai_response = response.text
+    except Exception as e:
+        ai_response = f"Error generating response: {str(e)}"
+    
+    # Add AI response to thread
+    add_message_to_thread(
+        thread_id=thread_id,
+        role="assistant",
+        content=ai_response,
+        session_id=session_id,
+        db=db
+    )
+    
+    return {
+        "response": ai_response,
+        "thread_id": thread_id
+    }
+
+@app.delete("/threads/{thread_id}")
+async def delete_thread_endpoint(
+    thread_id: str,
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """Delete a conversation thread"""
+    session_id = get_session_id(request)
+    success = delete_thread(thread_id, session_id, db=db)
+    if success:
+        return {"message": "Thread deleted successfully"}
+    else:
+        raise HTTPException(status_code=404, detail="Thread not found")
 
 @app.get("/health")
 async def health():

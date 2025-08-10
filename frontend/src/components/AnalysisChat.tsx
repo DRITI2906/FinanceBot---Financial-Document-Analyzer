@@ -9,21 +9,12 @@ interface Message {
   timestamp: string;
 }
 
-interface ChatInterfaceProps {
-  threadId: string | null;
-  messages: Message[];
-  onMessageSent: (message: Message) => void;
-  onNewMessage: (message: Message) => void;
-  documentIds?: string[];
+interface AnalysisChatProps {
+  documentId: string;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({
-  threadId,
-  messages,
-  onMessageSent,
-  onNewMessage,
-  documentIds = []
-}) => {
+const AnalysisChat: React.FC<AnalysisChatProps> = ({ documentId }) => {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -37,27 +28,26 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   }, [messages]);
 
   const handleSendMessage = async () => {
-    if (!inputMessage.trim() || !threadId || isLoading) return;
+    if (!inputMessage.trim() || isLoading) return;
 
     const userMessage = inputMessage.trim();
     setInputMessage('');
     setIsLoading(true);
 
-    // Add user message immediately
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
       content: userMessage,
       timestamp: new Date().toISOString()
     };
-    onMessageSent(userMsg);
+    setMessages(prev => [...prev, userMsg]);
 
     try {
       const response = await axios.post(
-        `http://localhost:8000/threads/${threadId}/chat`,
+        'http://localhost:8000/chat',
         {
-          message: userMessage,
-          document_ids: documentIds
+          question: userMessage,
+          document_id: documentId
         },
         {
           headers: sessionManager.getHeaders()
@@ -67,10 +57,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: response.data.response,
+        content: response.data.answer,
         timestamp: new Date().toISOString()
       };
-      onNewMessage(aiMessage);
+      setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
       console.error('Error sending message:', error);
       const errorMessage: Message = {
@@ -79,7 +69,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         content: 'Sorry, I encountered an error. Please try again.',
         timestamp: new Date().toISOString()
       };
-      onNewMessage(errorMessage);
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
@@ -99,22 +89,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       .replace(/\n/g, '<br>');
   };
 
-  if (!threadId) {
-    return (
-      <div className="chat-container">
-        <div className="no-thread-message">
-          <p>Select a conversation or start a new chat to begin messaging.</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="chat-container">
       <div className="messages-container">
         {messages.length === 0 ? (
           <div className="empty-chat">
-            <p>Start a new conversation! Ask me anything about your financial documents.</p>
+            <p>Ask me anything about this financial document!</p>
           </div>
         ) : (
           messages.map((message) => (
@@ -179,4 +159,4 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   );
 };
 
-export default ChatInterface;
+export default AnalysisChat;

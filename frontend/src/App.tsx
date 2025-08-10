@@ -1,6 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
+import sessionManager from './sessionManager';
+import Sidebar from './components/Sidebar';
+import ChatInterface from './components/ChatInterface';
 
 interface AnalysisResult {
   document_id: string;
@@ -13,36 +16,48 @@ interface AnalysisResult {
   recommendations: string[];
 }
 
+interface Thread {
+  id: number;
+  thread_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+}
+
 function App() {
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [results, setResults] = useState<AnalysisResult[]>([]);
   const [error, setError] = useState<string>('');
-  const [chatQuestion, setChatQuestion] = useState('');
-  const [chatAnswer, setChatAnswer] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
   const [expandedInsights, setExpandedInsights] = useState<Set<string>>(new Set());
+  const [threads, setThreads] = useState<Thread[]>([]);
+  const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [showSidebar, setShowSidebar] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    console.log('File change event:', e.target.files);
     if (e.target.files && e.target.files.length > 0) {
       const incoming = Array.from(e.target.files);
-      console.log('Incoming files:', incoming.map(f => f.name));
       setFiles((prev) => {
         const byKey = new Map<string, File>();
         prev.forEach((f) => byKey.set(`${f.name}|${f.size}|${f.lastModified}`, f));
         incoming.forEach((f) => byKey.set(`${f.name}|${f.size}|${f.lastModified}`, f));
         const merged = Array.from(byKey.values());
-        console.log('Merged files:', merged.map(f => f.name));
-        // Keep the native input in sync with our merged list
         try {
           const dt = new DataTransfer();
           merged.forEach((f) => dt.items.add(f));
           if (fileInputRef.current) fileInputRef.current.files = dt.files;
         } catch (_) {
-          // Fallback: if DataTransfer not available, clear the input
           if (fileInputRef.current) fileInputRef.current.value = '';
         }
         return merged;
@@ -71,7 +86,6 @@ function App() {
       return;
     }
 
-    console.log('Uploading files:', files.map(f => f.name));
     setLoading(true);
     setError('');
 
@@ -79,122 +93,38 @@ function App() {
     files.forEach((f) => formData.append('files', f));
 
     try {
-      console.log('Sending request to backend...');
       const response = await axios.post('http://localhost:8000/upload-multiple', formData, {
         headers: {
+          ...sessionManager.getMultipartHeaders(),
           'Content-Type': 'multipart/form-data',
         },
       });
-      console.log('Backend response:', response.data);
+      
       const list = response.data.results || [];
       const first = list[0] || null;
       setResults(list);
       setResult(first);
-      if (response.data.combined) {
-        setChatAnswer(
-          `Combined insights:\n- ${response.data.combined.key_insights.join('\n- ')}\n\nOverall risk: ${response.data.combined.risk_score}/10\n\nRecommendations:\n- ${response.data.combined.recommendations.join('\n- ')}`
-        );
-      }
-    } catch (err: any) {
-      console.error('Upload error:', err);
-      setError(err.response?.data?.detail || 'Upload failed');
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      setError(error.response?.data?.detail || 'Upload failed');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChat = async () => {
-    if (!chatQuestion || ((results.length === 0 && !result) && files.length === 0)) return;
-
-    setChatLoading(true);
-    try {
-      let answer = '';
-      if (results.length <= 1 && result) {
-        const response = await axios.post('http://localhost:8000/chat', {
-          document_id: result.document_id,
-          question: chatQuestion,
-        });
-        answer = response.data.answer;
-      } else {
-        // Ask across currently analyzed results (multi)
-        const ids = results.map((r) => r.document_id);
-        // Fallback: if results empty, upload now then ask
-        if (ids.length === 0 && files.length > 0) {
-          const formData = new FormData();
-          files.forEach((f) => formData.append('files', f));
-          const uploadResp = await axios.post('http://localhost:8000/upload-multiple', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-          });
-          const list = uploadResp.data.results || [];
-          setResults(list);
-          ids.push(...list.map((r: any) => r.document_id));
-        }
-        const chatResp = await axios.post('http://localhost:8000/chat-multi', {
-          document_ids: ids,
-          question: chatQuestion,
-        });
-        answer = chatResp.data.answer;
-      }
-      setChatAnswer(answer);
-    } catch (err: any) {
-      // If the backend reloaded, in-memory documents are gone. Re-upload and retry once.
-      if (err?.response?.status === 404 && files.length > 0) {
-        try {
-          const formData = new FormData();
-          files.forEach((f) => formData.append('files', f));
-          const uploadResp = await axios.post('http://localhost:8000/upload-multiple', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-          });
-          const ids = (uploadResp.data.results || []).map((r: any) => r.document_id);
-          setResults(uploadResp.data.results || []);
-          const chatResp = await axios.post('http://localhost:8000/chat-multi', {
-            document_ids: ids,
-            question: chatQuestion,
-          });
-          setChatAnswer(chatResp.data.answer);
-          return;
-        } catch (retryErr: any) {
-          setChatAnswer('Chat failed: ' + (retryErr.response?.data?.detail || 'Unknown error'));
-          return;
-        }
-      }
-      setChatAnswer('Chat failed: ' + (err.response?.data?.detail || 'Unknown error'));
-    } finally {
-      setChatLoading(false);
-    }
-  };
-
   const getRiskColor = (score: number) => {
-    if (score >= 7) return '#dc2626'; // red
-    if (score >= 4) return '#ea580c'; // orange
-    if (score >= 2) return '#ca8a04'; // yellow
-    return '#16a34a'; // green
+    if (score <= 3) return '#10b981';
+    if (score <= 6) return '#f59e0b';
+    return '#ef4444';
   };
 
   const renderMarkdownLite = (text: string) => {
-    const escapeHtml = (s: string) =>
-      s
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-
-    const normalize = (s: string) => {
-      const lines = (s || '').split(/\r?\n/).map((l) => l.trimEnd());
-      const cleaned = lines
-        .map((line) => {
-          if (/^\s*([*\-•])\s*$/.test(line)) return '';
-          return line.replace(/^\s*(?:\d+\.\s+|[*\-•]\s+)/, '');
-        })
-        .filter((l) => l.length > 0);
-      return cleaned.join('\n');
+    return {
+      __html: text
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+        .replace(/\n/g, '<br>')
     };
-
-    const stripped = normalize(text || '');
-    const escaped = escapeHtml(stripped);
-    const withBold = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    const withEm = withBold.replace(/(^|[^*])\*(?!\*)([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
-    const withBreaks = withEm.replace(/\n/g, '<br/>');
-    return { __html: withBreaks };
   };
 
   const toggleInsight = (insightId: string) => {
@@ -210,139 +140,178 @@ function App() {
   };
 
   const truncateText = (text: string, maxLength: number = 150) => {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
+    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
   };
 
-  return (
-    <div className="app">
-      <header className="header">
-        <h1>🤖 FinanceBot</h1>
-        <p>Upload your documents for AI analysis</p>
-      </header>
+  const loadThreads = async () => {
+    try {
+      const response = await axios.get('http://localhost:8000/threads', {
+        headers: sessionManager.getHeaders()
+      });
+      setThreads(response.data.threads || []);
+    } catch (error) {
+      console.error('Error loading threads:', error);
+    }
+  };
 
-      <main className="main">
+  const loadThreadMessages = async (threadId: string) => {
+    try {
+      const response = await axios.get(`http://localhost:8000/threads/${threadId}/messages`, {
+        headers: sessionManager.getHeaders()
+      });
+      setMessages(response.data.messages || []);
+    } catch (error) {
+      console.error('Error loading thread messages:', error);
+    }
+  };
+
+  const handleThreadSelect = (threadId: string) => {
+    setCurrentThreadId(threadId);
+    loadThreadMessages(threadId);
+  };
+
+  const handleNewThread = (threadId: string) => {
+    setCurrentThreadId(threadId);
+    setMessages([]);
+  };
+
+  const handleMessageSent = (message: Message) => {
+    setMessages(prev => [...prev, message]);
+  };
+
+  const handleNewMessage = (message: Message) => {
+    setMessages(prev => [...prev, message]);
+  };
+
+  useEffect(() => {
+    loadThreads();
+  }, []);
+
+  return (
+    <div className="App">
+      <div className="app-header">
+        <button 
+          onClick={() => setShowSidebar(!showSidebar)} 
+          className="sidebar-toggle"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <h1>🤖 FinanceBot</h1>
+      </div>
+
+      <div className="app-container">
+        {showSidebar && (
+          <Sidebar
+            threads={threads}
+            currentThreadId={currentThreadId}
+            onThreadSelect={handleThreadSelect}
+            onNewThread={handleNewThread}
+            onThreadsUpdate={loadThreads}
+          />
+        )}
+
+        <div className="main-content">
         <div className="upload-section">
-          <div className="upload-area">
-            <input
-              type="file"
-              accept=".pdf,.docx,.csv,.xlsx"
-              multiple
-              onChange={handleFileChange}
-              ref={fileInputRef}
-              className="file-input-hidden"
-            />
-            <p style={{ fontSize: '12px', color: '#6b7280' }}>Tip: Hold Ctrl or Shift to select multiple files</p>
-            <div className="file-picker-row">
-              <button
-                type="button"
-                className="choose-btn"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                Choose Files
-              </button>
+            <div className="tip">
+              💡 Upload your financial documents (PDF, DOCX, CSV, XLSX) to get AI-powered insights
             </div>
-            {files.length > 0 && (
-              <div className="file-list">
-                {files.map((f, idx) => (
-                  <div className="file-row" key={idx}>
-                    <span>{f.name}</span>
-                    <button
-                      type="button"
-                      className="remove-btn"
-                      onClick={() => removeFileAt(idx)}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+            
+            <div className="file-list">
+              {files.map((file, index) => (
+                <div key={`${file.name}|${file.size}|${file.lastModified}`} className="file-item">
+                  <span className="file-name">{file.name}</span>
+                  <button
+                    onClick={() => removeFileAt(index)}
+                    className="clear-file-btn"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="upload-controls">
+            <input
+                ref={fileInputRef}
+              type="file"
+                multiple
+                accept=".pdf,.docx,.csv,.xlsx"
+              onChange={handleFileChange}
+              className="file-input"
+            />
             <button
               onClick={handleUpload}
-              disabled={!files.length || loading}
+                disabled={loading || !files.length}
               className="upload-btn"
-              style={{ minWidth: 200, alignSelf: 'center' }}
             >
-              {loading ? '🔄 Analyzing...' : '📊 Analyze'}
+                {loading ? '📊 Analyzing...' : '📊 Analyze'}
             </button>
           </div>
           {error && <div className="error">{error}</div>}
         </div>
 
-        {(results.length > 0 || result) && (
+          {(results.length > 0 || result) && (
           <div className="results-section">
             <h2>📈 Analysis Results</h2>
-            {(results.length > 0 ? results : (result ? [result] : [])).map((r, idx) => (
-              <div className="result-card" key={r.document_id}>
-                <h3>{r.filename}</h3>
-                <div className="risk-score">
-                  <span>Risk Score: </span>
-                  <strong style={{ color: getRiskColor(r.risk_score) }}>
-                    {r.risk_score.toFixed(1)}/10
-                  </strong>
-                </div>
-                <div className="document-type">
-                  <span>Type: </span>
-                  <strong>{r.document_type.replace('_', ' ')}</strong>
-                </div>
+              {(results.length > 0 ? results : (result ? [result] : [])).map((r, idx) => (
+                <div className="result-card" key={r.document_id}>
+                  <h3>{r.filename}</h3>
+              <div className="risk-score">
+                <span>Risk Score: </span>
+                    <strong style={{ color: getRiskColor(r.risk_score) }}>
+                      {r.risk_score.toFixed(1)}/10
+                </strong>
               </div>
-            ))}
+              <div className="document-type">
+                <span>Type: </span>
+                    <strong>{r.document_type.replace('_', ' ')}</strong>
+              </div>
+            </div>
+              ))}
 
             <div className="insights">
               <h3>🔍 Key Insights</h3>
               <ul>
-                {(results.length > 0 ? results : (result ? [result] : [])).flatMap((r) => r.summary.key_insights.map((insight, i) => {
-                  const insightId = `${r.document_id}-${i}`;
-                  const isExpanded = expandedInsights.has(insightId);
-                  const displayText = isExpanded ? insight : truncateText(insight);
-                  const shouldShowToggle = insight.length > 150;
-                  
-                  return (
-                    <li key={insightId}>
-                      <div dangerouslySetInnerHTML={renderMarkdownLite(displayText)}></div>
-                      {shouldShowToggle && (
-                        <button
-                          onClick={() => toggleInsight(insightId)}
-                          className="read-more-btn"
-                        >
-                          {isExpanded ? 'Read Less' : 'Read More'}
-                        </button>
-                      )}
-                    </li>
-                  );
-                }))}
-              </ul>
-            </div>
-
-            <div className="chat-section">
-              <h3>💬 Ask Questions About Your Document</h3>
-              <div className="chat-input">
-                <input
-                  type="text"
-                  placeholder="Ask something about your document..."
-                  value={chatQuestion}
-                  onChange={(e) => setChatQuestion(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleChat()}
-                />
+                  {(results.length > 0 ? results : (result ? [result] : [])).flatMap((r) => r.summary.key_insights.map((insight, i) => {
+                    const insightId = `${r.document_id}-${i}`;
+                    const isExpanded = expandedInsights.has(insightId);
+                    const displayText = isExpanded ? insight : truncateText(insight);
+                    const shouldShowToggle = insight.length > 150;
+                    
+                    return (
+                      <li key={insightId}>
+                        <div dangerouslySetInnerHTML={renderMarkdownLite(displayText)}></div>
+                        {shouldShowToggle && (
                 <button
-                  onClick={handleChat}
-                  disabled={!chatQuestion || chatLoading}
-                  className="chat-btn"
+                            onClick={() => toggleInsight(insightId)}
+                            className="read-more-btn"
                 >
-                  {chatLoading ? '🤔' : '🖊️'}
+                            {isExpanded ? 'Read Less' : 'Read More'}
                 </button>
-              </div>
-              {chatAnswer && (
-                <div className="chat-answer">
-                  <strong>Answer:</strong>
-                  <p dangerouslySetInnerHTML={renderMarkdownLite(chatAnswer)} />
-                </div>
-              )}
+                        )}
+                      </li>
+                    );
+                  }))}
+                </ul>
             </div>
           </div>
         )}
-      </main>
+
+          <div className="chat-interface-container">
+            <ChatInterface
+              threadId={currentThreadId}
+              messages={messages}
+              onMessageSent={handleMessageSent}
+              onNewMessage={handleNewMessage}
+              documentIds={results.map(r => r.document_id)}
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
