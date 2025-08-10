@@ -239,7 +239,7 @@ async def upload_file(file: UploadFile = File(...)):
                 "total_transactions": 0,
                 "total_amount": 0.0,
                 "date_range": {},
-                "key_insights": [analysis["ai_analysis"][:200] + "..."]
+                "key_insights": [analysis["ai_analysis"][:300]]
             },
             "transactions": [],
             "anomalies": [],
@@ -305,7 +305,7 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
                     "total_transactions": 0,
                     "total_amount": 0.0,
                     "date_range": {},
-                    "key_insights": [analysis["ai_analysis"][:200] + "..."]
+                    "key_insights": [analysis["ai_analysis"][:300]]
                 },
                 "transactions": [],
                 "anomalies": [],

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import axios from 'axios';
 import './App.css';
 
@@ -22,18 +22,46 @@ function App() {
   const [chatQuestion, setChatQuestion] = useState('');
   const [chatAnswer, setChatAnswer] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('File change event:', e.target.files);
     if (e.target.files && e.target.files.length > 0) {
       const incoming = Array.from(e.target.files);
+      console.log('Incoming files:', incoming.map(f => f.name));
       setFiles((prev) => {
         const byKey = new Map<string, File>();
         prev.forEach((f) => byKey.set(`${f.name}|${f.size}|${f.lastModified}`, f));
         incoming.forEach((f) => byKey.set(`${f.name}|${f.size}|${f.lastModified}`, f));
-        return Array.from(byKey.values());
+        const merged = Array.from(byKey.values());
+        console.log('Merged files:', merged.map(f => f.name));
+        // Keep the native input in sync with our merged list
+        try {
+          const dt = new DataTransfer();
+          merged.forEach((f) => dt.items.add(f));
+          if (fileInputRef.current) fileInputRef.current.files = dt.files;
+        } catch (_) {
+          // Fallback: if DataTransfer not available, clear the input
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+        return merged;
       });
       setError('');
     }
+  };
+
+  const removeFileAt = (index: number) => {
+    setFiles((prev) => {
+      const updated = prev.filter((_, i) => i !== index);
+      try {
+        const dt = new DataTransfer();
+        updated.forEach((f) => dt.items.add(f));
+        if (fileInputRef.current) fileInputRef.current.files = dt.files;
+      } catch (_) {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+      return updated;
+    });
   };
 
   const handleUpload = async () => {
@@ -42,6 +70,7 @@ function App() {
       return;
     }
 
+    console.log('Uploading files:', files.map(f => f.name));
     setLoading(true);
     setError('');
 
@@ -49,11 +78,13 @@ function App() {
     files.forEach((f) => formData.append('files', f));
 
     try {
+      console.log('Sending request to backend...');
       const response = await axios.post('http://localhost:8000/upload-multiple', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
+      console.log('Backend response:', response.data);
       const list = response.data.results || [];
       const first = list[0] || null;
       setResults(list);
@@ -64,6 +95,7 @@ function App() {
         );
       }
     } catch (err: any) {
+      console.error('Upload error:', err);
       setError(err.response?.data?.detail || 'Upload failed');
     } finally {
       setLoading(false);
@@ -104,6 +136,27 @@ function App() {
       }
       setChatAnswer(answer);
     } catch (err: any) {
+      // If the backend reloaded, in-memory documents are gone. Re-upload and retry once.
+      if (err?.response?.status === 404 && files.length > 0) {
+        try {
+          const formData = new FormData();
+          files.forEach((f) => formData.append('files', f));
+          const uploadResp = await axios.post('http://localhost:8000/upload-multiple', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+          const ids = (uploadResp.data.results || []).map((r: any) => r.document_id);
+          setResults(uploadResp.data.results || []);
+          const chatResp = await axios.post('http://localhost:8000/chat-multi', {
+            document_ids: ids,
+            question: chatQuestion,
+          });
+          setChatAnswer(chatResp.data.answer);
+          return;
+        } catch (retryErr: any) {
+          setChatAnswer('Chat failed: ' + (retryErr.response?.data?.detail || 'Unknown error'));
+          return;
+        }
+      }
       setChatAnswer('Chat failed: ' + (err.response?.data?.detail || 'Unknown error'));
     } finally {
       setChatLoading(false);
@@ -151,48 +204,54 @@ function App() {
     <div className="app">
       <header className="header">
         <h1>🤖 FinanceBot</h1>
-        <p>Powered by Google Gemini - Upload PDF documents for AI analysis</p>
+        <p>Upload your documents for AI analysis</p>
       </header>
 
       <main className="main">
         <div className="upload-section">
-          <h2>📄 Upload Financial Document</h2>
           <div className="upload-area">
             <input
               type="file"
               accept=".pdf,.docx,.csv,.xlsx"
               multiple
               onChange={handleFileChange}
-              className="file-input"
+              ref={fileInputRef}
+              className="file-input-hidden"
             />
             <p style={{ fontSize: '12px', color: '#6b7280' }}>Tip: Hold Ctrl or Shift to select multiple files</p>
+            <div className="file-picker-row">
+              <button
+                type="button"
+                className="choose-btn"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Choose Files
+              </button>
+            </div>
             {files.length > 0 && (
-              <div>
-                <p>Selected files:</p>
-                <ul>
-                  {files.map((f, idx) => (
-                    <li key={idx}>{f.name}</li>
-                  ))}
-                </ul>
+              <div className="file-list">
+                {files.map((f, idx) => (
+                  <div className="file-row" key={idx}>
+                    <span>{f.name}</span>
+                    <button
+                      type="button"
+                      className="remove-btn"
+                      onClick={() => removeFileAt(idx)}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
             <button
               onClick={handleUpload}
               disabled={!files.length || loading}
               className="upload-btn"
+              style={{ minWidth: 200, alignSelf: 'center' }}
             >
-              {loading ? '🔄 Analyzing...' : '📊 Analyze Document'}
+              {loading ? '🔄 Analyzing...' : '📊 Analyze'}
             </button>
-            {files.length > 0 && (
-              <button
-                onClick={() => setFiles([])}
-                disabled={loading}
-                style={{ marginLeft: 8 }}
-                className="upload-btn"
-              >
-                Clear
-              </button>
-            )}
           </div>
           {error && <div className="error">{error}</div>}
         </div>
@@ -225,15 +284,6 @@ function App() {
               </ul>
             </div>
 
-            <div className="recommendations">
-              <h3>💡 Recommendations</h3>
-              <ul>
-                {(results.length > 0 ? results : (result ? [result] : [])).flatMap((r) => r.recommendations.map((rec, i) => (
-                  <li key={`${r.document_id}-rec-${i}`} dangerouslySetInnerHTML={renderMarkdownLite(rec)}></li>
-                )))}
-              </ul>
-            </div>
-
             <div className="chat-section">
               <h3>💬 Ask Questions About Your Document</h3>
               <div className="chat-input">
@@ -249,7 +299,7 @@ function App() {
                   disabled={!chatQuestion || chatLoading}
                   className="chat-btn"
                 >
-                  {chatLoading ? '🤔' : '💬'}
+                  {chatLoading ? '🤔' : '🖊️'}
                 </button>
               </div>
               {chatAnswer && (
