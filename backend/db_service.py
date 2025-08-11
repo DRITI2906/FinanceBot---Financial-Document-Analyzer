@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from database import User, Document, Conversation, ConversationThread, ConversationMessage, SessionLocal
+from database import User, Document, Conversation, ConversationThread, ConversationMessage, ThreadDocument, SessionLocal
 from datetime import datetime
 import hashlib
 import json
@@ -328,4 +328,149 @@ def delete_thread(thread_id: str, session_id: str, db: Session = None) -> bool:
         db.delete(thread)
         db.commit()
         return True
+    return False
+
+def save_document_to_thread(
+    thread_id: str,
+    document_id: str,
+    session_id: str,
+    db: Session = None
+) -> bool:
+    """Save a document to a specific thread"""
+    if db is None:
+        db = SessionLocal()
+        try:
+            return save_document_to_thread(thread_id, document_id, session_id, db)
+        finally:
+            db.close()
+    
+    user = get_user(session_id, db)
+    if not user:
+        return False
+    
+    # Find the thread
+    thread = db.query(ConversationThread).filter(
+        ConversationThread.thread_id == thread_id,
+        ConversationThread.user_id == user.id
+    ).first()
+    
+    if not thread:
+        return False
+    
+    # Find the document
+    document = db.query(Document).filter(
+        Document.document_id == document_id,
+        Document.user_id == user.id
+    ).first()
+    
+    if not document:
+        return False
+    
+    # Check if document is already in this thread
+    existing = db.query(ThreadDocument).filter(
+        ThreadDocument.thread_id == thread.id,
+        ThreadDocument.document_id == document.id
+    ).first()
+    
+    if existing:
+        return True  # Already exists
+    
+    # Add document to thread
+    thread_doc = ThreadDocument(
+        thread_id=thread.id,
+        document_id=document.id
+    )
+    
+    db.add(thread_doc)
+    db.commit()
+    return True
+
+def get_thread_documents(thread_id: str, session_id: str, db: Session = None) -> list:
+    """Get all documents associated with a specific thread"""
+    if db is None:
+        db = SessionLocal()
+        try:
+            return get_thread_documents(thread_id, session_id, db)
+        finally:
+            db.close()
+    
+    user = get_user(session_id, db)
+    if not user:
+        return []
+    
+    thread = db.query(ConversationThread).filter(
+        ConversationThread.thread_id == thread_id,
+        ConversationThread.user_id == user.id
+    ).first()
+    
+    if not thread:
+        return []
+    
+    thread_docs = db.query(ThreadDocument).filter(
+        ThreadDocument.thread_id == thread.id
+    ).order_by(ThreadDocument.uploaded_at.desc()).all()
+    
+    documents = []
+    for td in thread_docs:
+        doc = td.document
+        if doc:
+            documents.append({
+                "id": doc.id,
+                "document_id": doc.document_id,
+                "filename": doc.filename,
+                "document_type": doc.document_type,
+                "risk_score": doc.risk_score,
+                "upload_date": doc.upload_date.isoformat(),
+                "thread_upload_date": td.uploaded_at.isoformat(),
+                "summary": json.loads(doc.summary) if doc.summary else {},
+                "content": doc.content
+            })
+    
+    return documents
+
+def remove_document_from_thread(
+    thread_id: str,
+    document_id: str,
+    session_id: str,
+    db: Session = None
+) -> bool:
+    """Remove a document from a specific thread"""
+    if db is None:
+        db = SessionLocal()
+        try:
+            return remove_document_from_thread(thread_id, document_id, session_id, db)
+        finally:
+            db.close()
+    
+    user = get_user(session_id, db)
+    if not user:
+        return False
+    
+    thread = db.query(ConversationThread).filter(
+        ConversationThread.thread_id == thread_id,
+        ConversationThread.user_id == user.id
+    ).first()
+    
+    if not thread:
+        return False
+    
+    document = db.query(Document).filter(
+        Document.document_id == document_id,
+        Document.user_id == user.id
+    ).first()
+    
+    if not document:
+        return False
+    
+    # Remove document from thread
+    thread_doc = db.query(ThreadDocument).filter(
+        ThreadDocument.thread_id == thread.id,
+        ThreadDocument.document_id == document.id
+    ).first()
+    
+    if thread_doc:
+        db.delete(thread_doc)
+        db.commit()
+        return True
+    
     return False

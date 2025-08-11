@@ -44,6 +44,7 @@ class Document(Base):
     user = relationship("User", back_populates="documents")
     conversations = relationship("Conversation", back_populates="document")
     messages = relationship("ConversationMessage", back_populates="document")
+    thread_documents = relationship("ThreadDocument", back_populates="document", cascade="all, delete-orphan")
 
 class ConversationThread(Base):
     __tablename__ = "conversation_threads"
@@ -58,6 +59,7 @@ class ConversationThread(Base):
     # Relationships
     user = relationship("User", back_populates="conversation_threads")
     messages = relationship("ConversationMessage", back_populates="thread", cascade="all, delete-orphan")
+    thread_documents = relationship("ThreadDocument", back_populates="thread", cascade="all, delete-orphan")
 
 class ConversationMessage(Base):
     __tablename__ = "conversation_messages"
@@ -72,6 +74,18 @@ class ConversationMessage(Base):
     # Relationships
     thread = relationship("ConversationThread", back_populates="messages")
     document = relationship("Document", back_populates="messages")
+
+class ThreadDocument(Base):
+    __tablename__ = "thread_documents"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    thread_id = Column(Integer, ForeignKey("conversation_threads.id"))
+    document_id = Column(Integer, ForeignKey("documents.id"))
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    thread = relationship("ConversationThread", back_populates="thread_documents")
+    document = relationship("Document", back_populates="thread_documents")
 
 class Conversation(Base):
     __tablename__ = "conversations"
