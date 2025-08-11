@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 # Database imports
 from database import create_tables, get_db
 from db_service import (
-    save_document, save_conversation, get_user_conversations,
+    save_document, save_conversation, get_user_conversations, 
     get_user_documents, get_document_by_id, delete_document,
     create_conversation_thread, add_message_to_thread, get_user_threads,
     get_thread_messages, delete_thread, save_document_to_thread, get_thread_documents
@@ -296,7 +296,7 @@ async def upload_file(
                 "total_transactions": 0,
                 "total_amount": 0.0,
                 "date_range": {},
-                "key_insights": [analysis["ai_analysis"][:300]]
+                "key_insights": [analysis["ai_analysis"]]
             },
             "transactions": [],
             "anomalies": [],
@@ -311,7 +311,7 @@ async def upload_file(
             "full_text": text,
             "ai_analysis": analysis["ai_analysis"]
         }
-
+        
         # Persist to DB and optionally associate with a thread
         try:
             session_id = get_session_id(request)
@@ -373,7 +373,7 @@ async def upload_multiple(
                 # Copy file content to temp file
                 shutil.copyfileobj(file.file, tmp)
                 tmp_path = tmp.name
-            
+
             # Extract text from the file
             text = extract_text_by_extension(tmp_path, filename_lower)
             
@@ -411,7 +411,7 @@ async def upload_multiple(
                     "total_transactions": 0,
                     "total_amount": 0.0,
                     "date_range": {},
-                    "key_insights": [analysis["ai_analysis"][:300]]
+                    "key_insights": [analysis["ai_analysis"]]
                 },
                 "transactions": [],
                 "anomalies": [],
@@ -832,13 +832,13 @@ async def chat_in_thread(
                             contexts.append(f"Document: {doc['result']['filename']}\nContent: {doc['full_text'][:1000]}")
                     if contexts:
                         context = "\n\n".join(contexts) + "\n\n"
-                
+
                 prompt = f"""
                 Hey! I'm your friendly financial assistant. {context}The user just said: {user_message}
 
                 Can you give them a friendly, helpful response? Keep it conversational and warm, like you're talking to a friend. If they have documents uploaded, feel free to reference them in your answer!
                 """
-                
+
                 response = model.generate_content(prompt)
                 ai_response = response.text
         except Exception as e:

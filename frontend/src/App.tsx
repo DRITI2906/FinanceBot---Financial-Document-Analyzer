@@ -145,6 +145,8 @@ function App() {
         const merged = Array.from(existingById.values());
         return { ...prev, results: merged, result: first };
       });
+      // Refresh threads to pull possible new title from backend
+      loadThreads();
     } catch (error: any) {
       console.error('Upload error:', error);
       setCurrentUploadState((prev) => ({ ...prev, error: error.response?.data?.detail || 'Upload failed' }));
@@ -291,17 +293,19 @@ function App() {
   return (
     <div className="App">
       <div className="app-header">
-        <button 
-          onClick={() => setShowSidebar(!showSidebar)} 
-          className="sidebar-toggle"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="3" y1="6" x2="21" y2="6"></line>
-            <line x1="3" y1="12" x2="21" y2="12"></line>
-            <line x1="3" y1="18" x2="21" y2="18"></line>
-          </svg>
-        </button>
-        <h1>🤖 FinanceBot</h1>
+        <div className="app-header-inner">
+          <button 
+            onClick={() => setShowSidebar(!showSidebar)} 
+            className="sidebar-toggle"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <h1>🤖 FinanceBot</h1>
+        </div>
       </div>
 
       <div className="app-container">
@@ -358,7 +362,6 @@ function App() {
                   <button
                     onClick={() => currentThreadId && setThreadView(prev => ({ ...prev, [currentThreadId]: 'chat' }))}
                     className="upload-btn"
-                    style={{ marginLeft: 8 }}
                   >
                     💬 Chat with Bot
                   </button>

@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from database import User, Document, Conversation, ConversationThread, ConversationMessage, ThreadDocument, SessionLocal
 from datetime import datetime
+import os
 import hashlib
 import json
 import uuid
@@ -380,8 +381,19 @@ def save_document_to_thread(
         thread_id=thread.id,
         document_id=document.id
     )
-    
+
     db.add(thread_doc)
+
+    # If this is the first document in the thread and title is default, rename thread
+    existing_count = db.query(ThreadDocument).filter(ThreadDocument.thread_id == thread.id).count()
+    if (existing_count == 0) and (not thread.title or thread.title.strip().lower() == "new chat"):
+        base_name = os.path.splitext(document.filename)[0] or document.filename
+        # Truncate to keep sidebar tidy
+        if len(base_name) > 50:
+            base_name = base_name[:47] + "..."
+        thread.title = base_name
+        thread.updated_at = datetime.utcnow()
+
     db.commit()
     return True
 
