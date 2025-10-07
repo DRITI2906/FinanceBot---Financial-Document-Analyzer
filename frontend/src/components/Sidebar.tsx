@@ -40,8 +40,11 @@ const Sidebar: React.FC<SidebarProps> = ({
       const newThreadId = response.data.thread_id;
       onNewThread(newThreadId);
       onThreadsUpdate();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating new thread:', error);
+      const msg = error?.response?.data?.detail || error?.message || 'Failed to create conversation';
+      // Surface the error to the user in production
+      alert(`Error creating conversation: ${msg}`);
     }
   };
 
@@ -60,8 +63,10 @@ const Sidebar: React.FC<SidebarProps> = ({
         }
       );
       onThreadsUpdate();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting thread:', error);
+      const msg = error?.response?.data?.detail || error?.message || 'Failed to delete conversation';
+      alert(`Error deleting conversation: ${msg}`);
     }
   };
 
