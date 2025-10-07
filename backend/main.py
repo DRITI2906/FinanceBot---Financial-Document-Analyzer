@@ -57,7 +57,8 @@ gemini_api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
 try:
     if gemini_api_key:
         genai.configure(api_key=gemini_api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Use requested Gemini model
+        model = genai.GenerativeModel('gemini-2.5.flash')
     else:
         # No API key present; avoid initializing the model so we can surface a clear message
         model = None
