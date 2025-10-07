@@ -30,7 +30,7 @@ from db_service import (
 )
 
 # Load environment variables explicitly from backend/.env regardless of CWD
-load_dotenv(dotenv_path=Path(__file__).parent / ".env")
+load_dotenv(dotenv_path=Path(_file_).parent / ".env")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -39,10 +39,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configure CORS
+# Configure CORS (allow origins configurable via FRONTEND_URL env var)
+frontend_origins = os.getenv("FRONTEND_URL", "http://localhost:3000")
+# Accept a comma-separated list in FRONTEND_URL
+allowed_origins = [o.strip() for o in frontend_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -517,7 +521,7 @@ async def upload_multiple(
             # Extract bullet lists
             insights = []
             recs = []
-            bullets = [line.strip(" -*•\t").strip() for line in text_out.splitlines() if line.strip().startswith(("-","*","•"))]
+            bullets = [line.strip(" -•\t").strip() for line in text_out.splitlines() if line.strip().startswith(("-","","•"))]
             # Heuristic: first half bullets as insights, latter as recs if headings not present
             if bullets:
                 split_at = max(2, len(bullets)//2)
@@ -910,7 +914,7 @@ async def health():
         }
     }
 
-if __name__ == "__main__":
+if _name_ == "_main_":
     print("🚀 Starting FinanceBot with Google Gemini...")
     print("📊 Backend API: http://localhost:8000")
     print("📚 Docs: http://localhost:8000/docs")
