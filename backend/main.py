@@ -21,7 +21,7 @@ import re
 from sqlalchemy.orm import Session
 
 # Database imports
-from database import create_tables, get_db
+from database import create_tables, get_db, User, Document
 from db_service import (
     save_document, save_conversation, get_user_conversations, 
     get_user_documents, get_document_by_id, delete_document,
@@ -913,6 +913,25 @@ async def health():
             "file_support": ["PDF", "DOCX", "CSV", "XLSX"]
         }
     }
+
+
+@app.get("/db-health")
+def db_health(db: Session = Depends(get_db)):
+    """Quick DB connectivity check (returns record counts)."""
+    try:
+        user_count = db.query(User).count()
+        doc_count = db.query(Document).count()
+        # Hide full DATABASE_URL but show which driver is in use
+        db_url = os.getenv('DATABASE_URL', 'sqlite:///./financebot.db')
+        driver = 'sqlite' if db_url.startswith('sqlite') else 'postgres'
+        return {
+            'ok': True,
+            'driver': driver,
+            'user_count': user_count,
+            'document_count': doc_count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB connectivity error: {str(e)}")
 
 if __name__ == "__main__":
     print("🚀 Starting FinanceBot with Google Gemini...")

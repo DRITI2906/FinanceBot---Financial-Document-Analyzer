@@ -1,7 +1,6 @@
 import React from 'react';
-import axios from 'axios';
 import sessionManager from '../sessionManager';
-import { API_BASE_URL } from '../services/api';
+import api from '../services/api';
 
 interface Thread {
   id: number;
@@ -20,22 +19,11 @@ interface SidebarProps {
   onThreadsUpdate: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({
-  threads,
-  currentThreadId,
-  onThreadSelect,
-  onNewThread,
-  onThreadsUpdate
-}) => {
+const Sidebar: React.FC<SidebarProps> = (props: SidebarProps) => {
+  const { threads, currentThreadId, onThreadSelect, onNewThread, onThreadsUpdate } = props;
   const handleNewChat = async () => {
     try {
-      const response = await axios.post(
-        `${API_BASE_URL}/threads`,
-        {},
-        {
-          headers: sessionManager.getHeaders()
-        }
-      );
+      const response = await api.post('/threads', {}, { headers: sessionManager.getHeaders() });
       
       const newThreadId = response.data.thread_id;
       onNewThread(newThreadId);
@@ -56,12 +44,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
 
     try {
-      await axios.delete(
-        `${API_BASE_URL}/threads/${threadId}`,
-        {
-          headers: sessionManager.getHeaders()
-        }
-      );
+      await api.delete(`/threads/${threadId}`, { headers: sessionManager.getHeaders() });
       onThreadsUpdate();
     } catch (error: any) {
       console.error('Error deleting thread:', error);
