@@ -58,7 +58,7 @@ try:
     if gemini_api_key:
         genai.configure(api_key=gemini_api_key)
         # Use requested Gemini model
-        model = genai.GenerativeModel('gemini-2.5.flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
     else:
         # No API key present; avoid initializing the model so we can surface a clear message
         model = None
