@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import sessionManager from '../sessionManager';
+import { API_BASE_URL } from '../services/api';
 
 interface Message {
   id: string;
@@ -54,7 +55,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     try {
       const response = await axios.post(
-        `http://localhost:8000/threads/${threadId}/chat`,
+        `${API_BASE_URL}/threads/${threadId}/chat`,
         {
           message: userMessage,
           document_ids: documentIds

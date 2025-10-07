@@ -129,7 +129,7 @@ function App() {
     formData.append('thread_id', currentThreadId);
 
     try {
-      const response = await axios.post('http://localhost:8000/upload-multiple', formData, {
+      const response = await axios.post(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/upload-multiple`, formData, {
         headers: {
           ...sessionManager.getMultipartHeaders(),
           'Content-Type': 'multipart/form-data',
@@ -157,7 +157,7 @@ function App() {
 
   const loadThreadDocuments = async (threadId: string) => {
     try {
-      const response = await axios.get(`http://localhost:8000/threads/${threadId}/documents`, {
+      const response = await axios.get(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/threads/${threadId}/documents`, {
         headers: sessionManager.getHeaders(),
       });
       const docs = response.data.documents || [];
@@ -221,7 +221,7 @@ function App() {
 
   const loadThreads = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/threads', {
+      const response = await axios.get(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/threads`, {
         headers: sessionManager.getHeaders()
       });
       setThreads(response.data.threads || []);
@@ -232,7 +232,7 @@ function App() {
 
   const loadThreadMessages = async (threadId: string) => {
     try {
-      const response = await axios.get(`http://localhost:8000/threads/${threadId}/messages`, {
+      const response = await axios.get(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/threads/${threadId}/messages`, {
         headers: sessionManager.getHeaders()
       });
       setMessages(response.data.messages || []);

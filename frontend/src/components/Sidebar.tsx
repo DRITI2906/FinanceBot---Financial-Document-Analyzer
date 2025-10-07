@@ -1,6 +1,7 @@
 import React from 'react';
 import axios from 'axios';
 import sessionManager from '../sessionManager';
+import { API_BASE_URL } from '../services/api';
 
 interface Thread {
   id: number;
@@ -29,7 +30,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const handleNewChat = async () => {
     try {
       const response = await axios.post(
-        'http://localhost:8000/threads',
+        `${API_BASE_URL}/threads`,
         {},
         {
           headers: sessionManager.getHeaders()
@@ -53,7 +54,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
     try {
       await axios.delete(
-        `http://localhost:8000/threads/${threadId}`,
+        `${API_BASE_URL}/threads/${threadId}`,
         {
           headers: sessionManager.getHeaders()
         }
