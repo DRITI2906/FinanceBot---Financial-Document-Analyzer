@@ -5,7 +5,8 @@ from datetime import datetime
 import os
 
 # Create database engine (support DATABASE_URL env var for hosted deployments)
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./financebot.db")
+# Default to a file inside the backend folder for local development
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{os.path.join(os.path.dirname(__file__), 'financebot.db')}")
 
 # If using SQLite (default for local dev), keep the check_same_thread flag.
 if DATABASE_URL.startswith("sqlite"):
@@ -20,7 +21,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 class User(Base):
-    _tablename_ = "users"
+    __tablename__ = "users"
     
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(String, unique=True, index=True)
@@ -32,7 +33,7 @@ class User(Base):
     conversation_threads = relationship("ConversationThread", back_populates="user")
 
 class Document(Base):
-    _tablename_ = "documents"
+    __tablename__ = "documents"
     
     id = Column(Integer, primary_key=True, index=True)
     document_id = Column(String, unique=True, index=True)  # UUID from existing system
@@ -52,7 +53,7 @@ class Document(Base):
     thread_documents = relationship("ThreadDocument", back_populates="document", cascade="all, delete-orphan")
 
 class ConversationThread(Base):
-    _tablename_ = "conversation_threads"
+    __tablename__ = "conversation_threads"
     
     id = Column(Integer, primary_key=True, index=True)
     thread_id = Column(String, unique=True, index=True)  # UUID for the thread
@@ -67,7 +68,7 @@ class ConversationThread(Base):
     thread_documents = relationship("ThreadDocument", back_populates="thread", cascade="all, delete-orphan")
 
 class ConversationMessage(Base):
-    _tablename_ = "conversation_messages"
+    __tablename__ = "conversation_messages"
     
     id = Column(Integer, primary_key=True, index=True)
     thread_id = Column(Integer, ForeignKey("conversation_threads.id"))
@@ -81,7 +82,7 @@ class ConversationMessage(Base):
     document = relationship("Document", back_populates="messages")
 
 class ThreadDocument(Base):
-    _tablename_ = "thread_documents"
+    __tablename__ = "thread_documents"
     
     id = Column(Integer, primary_key=True, index=True)
     thread_id = Column(Integer, ForeignKey("conversation_threads.id"))
@@ -93,7 +94,7 @@ class ThreadDocument(Base):
     document = relationship("Document", back_populates="thread_documents")
 
 class Conversation(Base):
-    _tablename_ = "conversations"
+    __tablename__ = "conversations"
     
     id = Column(Integer, primary_key=True, index=True)
     question = Column(Text)

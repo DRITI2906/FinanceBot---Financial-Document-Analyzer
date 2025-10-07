@@ -30,7 +30,7 @@ from db_service import (
 )
 
 # Load environment variables explicitly from backend/.env regardless of CWD
-load_dotenv(dotenv_path=Path(_file_).parent / ".env")
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -914,10 +914,12 @@ async def health():
         }
     }
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     print("🚀 Starting FinanceBot with Google Gemini...")
-    print("📊 Backend API: http://localhost:8000")
-    print("📚 Docs: http://localhost:8000/docs")
+    port = int(os.getenv("PORT", "8000"))
+    print(f"📊 Backend API: http://0.0.0.0:{port}")
+    print(f"📚 Docs: http://0.0.0.0:{port}/docs")
     print("🔑 Make sure to set GEMINI_API_KEY in .env file")
     print("🆓 Gemini is FREE to use!")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # In production we let the process manager (gunicorn/Render) control workers.
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
